@@ -1,6 +1,6 @@
 {
   "name": "photodrop-share",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Share photos from your SD card or folder via a secure tunnel. No upload. No cloud. One command, one link.",
   "main": "server.js",
   "bin": {

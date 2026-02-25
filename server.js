@@ -188,14 +188,7 @@ async function main() {
     res.send(indexHtml);
   });
 
-  app.use(express.static(path.join(__dirname, 'public'), {
-    etag: false,
-    lastModified: false,
-    setHeaders: (res) => {
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-    },
-  }));
+  app.use(express.static(path.join(__dirname, 'public')));
   let activeDownload = null;
   let downloadSeq = 0;
 
@@ -237,6 +230,7 @@ async function main() {
     const file = `${rel.replace(/\//g, '_').replace(/\.[^.]+$/, '')}_thumb.jpg`;
     const full = path.join(CACHE_DIR, file);
     if (!fs.existsSync(full)) return res.sendStatus(404);
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
     res.type('image/jpeg').sendFile(file, { root: CACHE_DIR });
   });
 
@@ -245,6 +239,7 @@ async function main() {
     const file = `${rel.replace(/\//g, '_').replace(/\.[^.]+$/, '')}_preview.jpg`;
     const full = path.join(CACHE_DIR, file);
     if (!fs.existsSync(full)) return res.sendStatus(404);
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
     res.type('image/jpeg').sendFile(file, { root: CACHE_DIR });
   });
 
