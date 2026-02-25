@@ -110,7 +110,7 @@ function syncUI() {
   for (const f of selected) {
     const p = photos.find(x => x.filename === f);
     if (!p) continue;
-    if (mode === 'jpg') bytes += p.previewSize || Math.max(200 * 1024, Math.round(p.size * 0.3));
+    if (mode === 'jpg') bytes += p.webSize || (p.raw ? Math.round(p.size * 0.005) : Math.round(p.size * 0.35));
     else bytes += p.size;
   }
   $('barSize').textContent = bytes ? ` · ${fmtSize(bytes)}` : '';

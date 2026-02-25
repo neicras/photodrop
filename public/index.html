@@ -241,7 +241,7 @@
       display: none;
       align-items: center;
       justify-content: space-between;
-      z-index: 200;
+      z-index: 250;
       box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
     }
     .bar.show { display: flex; }
@@ -258,7 +258,7 @@
       font-size: 12px;
       color: var(--text-gray);
     }
-    .bar-actions { display: flex; gap: 10px; }
+    .bar-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     .mode-select {
       border: 1px solid var(--border-light);
       background: var(--card-bg);
@@ -306,7 +306,17 @@
     @media (max-width: 640px) {
       .grid { grid-template-columns: repeat(2, 1fr); }
       header { padding: 14px 16px; }
-      .bar { padding: 12px 16px; }
+      .bar {
+        padding: 12px 16px;
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+      }
+      .bar-info { text-align: center; }
+      .bar-meta { text-align: center; }
+      .bar-actions { justify-content: center; }
+      .mode-select { flex: 1; min-width: 0; font-size: 12px; }
+      .btn { font-size: 12px; padding: 8px 12px; }
       .lb-body { padding: 0 48px; }
     }
   </style>
@@ -348,7 +358,7 @@
     </div>
     <div class="bar-actions">
       <select class="mode-select" id="barMode">
-        <option value="jpg">Fast JPG (recommended)</option>
+        <option value="jpg">Fast JPG (2048px, recommended)</option>
         <option value="original">Original files</option>
       </select>
       <button class="btn" id="barSpeed">Test Speed</button>
