@@ -34,6 +34,7 @@ const IMG_EXTS = new Set([
 
 const THUMB_W = 400;
 const PREVIEW_W = 1600;
+const WEB_W = 2048;
 
 const exiftool = new ExifTool({ taskTimeoutMillis: 30000 });
 
@@ -92,7 +93,7 @@ async function extractRawBuffer(srcPath) {
   }
 }
 
-async function ensureCached(srcPath, relPath, width, suffix) {
+async function ensureCached(srcPath, relPath, width, suffix, quality = 82) {
   const dest = cached(relPath, suffix);
   if (fs.existsSync(dest)) return dest;
 
@@ -107,7 +108,7 @@ async function ensureCached(srcPath, relPath, width, suffix) {
   await sharp(buf)
     .resize(width, null, { withoutEnlargement: true })
     .rotate()
-    .jpeg({ quality: 82 })
+    .jpeg({ quality })
     .toFile(dest);
 
   return dest;
@@ -175,7 +176,14 @@ async function main() {
 
   const app = express();
   app.use(express.json());
-  app.use(express.static(path.join(__dirname, 'public')));
+  app.use(express.static(path.join(__dirname, 'public'), {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+    },
+  }));
   let activeDownload = null;
   let downloadSeq = 0;
 
@@ -184,7 +192,9 @@ async function main() {
       const stat = fs.statSync(path.join(PHOTO_DIR, filename));
       const previewPath = cached(filename, 'preview');
       const previewSize = fs.existsSync(previewPath) ? fs.statSync(previewPath).size : null;
-      return { filename, raw: isRaw(filename), size: stat.size, previewSize };
+      const webPath = cached(filename, 'web');
+      const webSize = fs.existsSync(webPath) ? fs.statSync(webPath).size : null;
+      return { filename, raw: isRaw(filename), size: stat.size, previewSize, webSize };
     });
     res.json(list);
   });
@@ -254,14 +264,14 @@ async function main() {
     for (const f of files) {
       const fullPath = path.join(PHOTO_DIR, f);
       if (mode === 'jpg') {
-        let previewPath = cached(f, 'preview');
-        if (!fs.existsSync(previewPath)) {
-          await ensureCached(fullPath, f, PREVIEW_W, 'preview');
+        let webPath = cached(f, 'web');
+        if (!fs.existsSync(webPath)) {
+          await ensureCached(fullPath, f, WEB_W, 'web', 85);
         }
-        previewPath = cached(f, 'preview');
-        if (!fs.existsSync(previewPath)) return res.status(500).json({ error: `Preview failed: ${f}` });
-        prepared.push({ source: previewPath, name: `${path.basename(f, path.extname(f))}.jpg` });
-        plannedBytes += fs.statSync(previewPath).size;
+        webPath = cached(f, 'web');
+        if (!fs.existsSync(webPath)) return res.status(500).json({ error: `JPG conversion failed: ${f}` });
+        prepared.push({ source: webPath, name: `${path.basename(f, path.extname(f))}.jpg` });
+        plannedBytes += fs.statSync(webPath).size;
       } else {
         prepared.push({ source: fullPath, name: path.basename(f) });
         plannedBytes += fs.statSync(fullPath).size;
