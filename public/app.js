@@ -110,7 +110,7 @@ function syncUI() {
   for (const f of selected) {
     const p = photos.find(x => x.filename === f);
     if (!p) continue;
-    if (mode === 'jpg') bytes += p.webSize || (p.raw ? Math.round(p.size * 0.005) : Math.round(p.size * 0.35));
+    if (mode === 'jpg') bytes += p.webSize || 200 * 1024;
     else bytes += p.size;
   }
   $('barSize').textContent = bytes ? ` · ${fmtSize(bytes)}` : '';
@@ -230,16 +230,20 @@ async function testSpeed() {
   if (now - lastSpeedAt < 1500) return;
   lastSpeedAt = now;
   $('barMeta').textContent = 'Network: testing... · ETA: --';
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 8000);
   try {
-    const bytes = 1024 * 1024;
+    const bytes = 512 * 1024;
     const start = performance.now();
-    const res = await fetch(`/api/speed-test?bytes=${bytes}&t=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`/api/speed-test?bytes=${bytes}&t=${Date.now()}`, { cache: 'no-store', signal: ac.signal });
     const blob = await res.blob();
     const elapsedSec = (performance.now() - start) / 1000;
     const bps = (blob.size * 8) / elapsedSec;
     measuredMbps = bps / 1_000_000;
   } catch {
     measuredMbps = null;
+  } finally {
+    clearTimeout(timer);
   }
   syncUI();
 }
