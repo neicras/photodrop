@@ -3,17 +3,49 @@ const selected = new Set();
 let lbIdx = -1;
 let measuredMbps = null;
 let lastSpeedAt = 0;
+let galleryKey = '';
 
 const $ = (s) => document.getElementById(s);
 
 async function init() {
   const res = await fetch('/api/photos');
   photos = await res.json();
+  galleryKey = 'pd_' + photos.length + '_' + photos.slice(0, 3).map(p => p.filename).join('|');
+
+  restoreSession();
+
   $('loading').style.display = 'none';
   $('meta').textContent = `${photos.length} photos`;
   renderGrid();
   bindEvents();
-  testSpeed();
+  setTimeout(testSpeed, 3000);
+  setInterval(testSpeed, 60000);
+}
+
+function restoreSession() {
+  try {
+    const stored = sessionStorage.getItem(galleryKey);
+    if (!stored) return;
+    const data = JSON.parse(stored);
+    const validFiles = new Set(photos.map(p => p.filename));
+    if (Array.isArray(data.sel)) {
+      for (const f of data.sel) {
+        if (validFiles.has(f) && selected.size < MAX_SEL) selected.add(f);
+      }
+    }
+    if (data.mode && $('barMode')) {
+      $('barMode').value = data.mode;
+    }
+  } catch {}
+}
+
+function saveSession() {
+  try {
+    sessionStorage.setItem(galleryKey, JSON.stringify({
+      sel: Array.from(selected),
+      mode: $('barMode').value,
+    }));
+  } catch {}
 }
 
 function renderGrid() {
@@ -25,8 +57,8 @@ function renderGrid() {
     el.dataset.idx = i;
     el.innerHTML =
       `<img data-src="/api/thumb/${enc(p.filename)}" alt="" loading="lazy">` +
-      `<button class="check">✓</button>` +
-      `<div class="fname">${esc(p.filename)}${p.raw ? ' · RAW' : ''}</div>`;
+      `<button class="check">\u2713</button>` +
+      `<div class="fname">${esc(p.filename)}${p.raw ? ' \u00b7 RAW' : ''}</div>`;
     grid.appendChild(el);
     observer.observe(el.querySelector('img'));
   });
@@ -53,9 +85,7 @@ function bindEvents() {
   });
 
   $('selAllBtn').addEventListener('click', toggleAll);
-  $('barMode').addEventListener('change', syncUI);
-  $('barSpeed').addEventListener('click', testSpeed);
-  $('barClear').addEventListener('click', clearSel);
+  $('barMode').addEventListener('change', () => { saveSession(); syncUI(); });
   $('barDl').addEventListener('click', downloadSel);
   $('lbClose').addEventListener('click', closeLb);
   $('lbPrev').addEventListener('click', () => navLb(-1));
@@ -74,6 +104,7 @@ function toggle(filename) {
     return;
   }
   selected.has(filename) ? selected.delete(filename) : selected.add(filename);
+  saveSession();
   syncUI();
 }
 
@@ -87,11 +118,7 @@ function toggleAll() {
     }
     if (photos.length > MAX_SEL) alert(`Selected first ${MAX_SEL} of ${photos.length}. Download in batches.`);
   }
-  syncUI();
-}
-
-function clearSel() {
-  selected.clear();
+  saveSession();
   syncUI();
 }
 
@@ -103,7 +130,15 @@ function syncUI() {
   const n = selected.size;
   $('barCount').textContent = n;
   $('bar').classList.toggle('show', n > 0);
-  $('selAllBtn').textContent = n === photos.length ? 'Deselect All' : 'Select All';
+
+  const btn = $('selAllBtn');
+  if (n > 0) {
+    btn.textContent = `Clear (${n})`;
+    btn.classList.add('btn-primary');
+  } else {
+    btn.textContent = 'Select All';
+    btn.classList.remove('btn-primary');
+  }
 
   const mode = $('barMode').value;
   let bytes = 0;
@@ -113,7 +148,7 @@ function syncUI() {
     if (mode === 'jpg') bytes += p.webSize || 200 * 1024;
     else bytes += p.size;
   }
-  $('barSize').textContent = bytes ? ` · ${fmtSize(bytes)}` : '';
+  $('barSize').textContent = bytes ? ` \u00b7 ${fmtSize(bytes)}` : '';
   $('barMeta').textContent = formatMeta(bytes);
 
   if (lbIdx >= 0) syncLbBtn();
@@ -123,7 +158,7 @@ function openLb(idx) {
   lbIdx = idx;
   const p = photos[idx];
   $('lbImg').src = `/api/preview/${enc(p.filename)}`;
-  $('lbName').textContent = `${p.filename} · ${fmtSize(p.size)}`;
+  $('lbName').textContent = `${p.filename} \u00b7 ${fmtSize(p.size)}`;
   $('lb').classList.add('open');
   document.body.style.overflow = 'hidden';
   syncLbBtn();
@@ -149,7 +184,7 @@ function toggleLbSel() {
 function syncLbBtn() {
   const btn = $('lbSelBtn');
   const on = selected.has(photos[lbIdx]?.filename);
-  btn.textContent = on ? '✦ Selected' : '✦ Select';
+  btn.textContent = on ? '\u2726 Selected' : '\u2726 Select';
   btn.classList.toggle('picked', on);
 }
 
@@ -195,7 +230,7 @@ async function downloadSel() {
   } catch (err) {
     alert('Download failed: ' + err.message);
   } finally {
-    btn.textContent = '↓ Download Selected';
+    btn.textContent = '\u2193 Download';
     btn.disabled = false;
   }
 }
@@ -216,20 +251,19 @@ function onKey(e) {
 function formatMeta(bytes) {
   const netText = measuredMbps
     ? `Network: ${measuredMbps.toFixed(1)} Mbps`
-    : 'Network: unknown';
-  if (!bytes || !measuredMbps) return `${netText} · ETA: --`;
+    : 'Network: \u2014';
+  if (!bytes || !measuredMbps) return `${netText} \u00b7 ETA: \u2014`;
   const seconds = (bytes * 8) / (measuredMbps * 1000 * 1000);
   const eta = seconds < 60
     ? `${Math.max(1, Math.round(seconds))}s`
     : `${Math.round(seconds / 60)}m ${Math.round(seconds % 60)}s`;
-  return `${netText} · ETA: ~${eta}`;
+  return `${netText} \u00b7 ETA: ~${eta}`;
 }
 
 async function testSpeed() {
   const now = Date.now();
-  if (now - lastSpeedAt < 1500) return;
+  if (now - lastSpeedAt < 5000) return;
   lastSpeedAt = now;
-  $('barMeta').textContent = 'Network: testing... · ETA: --';
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 8000);
   try {

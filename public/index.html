@@ -259,7 +259,6 @@
       color: var(--text-gray);
     }
     .bar-actions { display: flex; gap: 8px; align-items: center; }
-    .bar-btns { display: flex; gap: 8px; }
     .mode-select {
       border: 1px solid var(--border-light);
       background: var(--card-bg);
@@ -315,13 +314,9 @@
       }
       .bar-info { text-align: center; font-size: 13px; }
       .bar-meta { text-align: center; }
-      .bar-actions {
-        flex-direction: column;
-        gap: 6px;
-      }
-      .mode-select { width: 100%; font-size: 13px; padding: 10px 12px; }
-      .bar-btns { display: flex; gap: 6px; }
-      .bar-btns .btn { flex: 1; font-size: 12px; padding: 10px 8px; text-align: center; }
+      .bar-actions { display: flex; gap: 8px; }
+      .mode-select { flex: 1; font-size: 13px; padding: 10px 12px; }
+      .bar-actions .btn { flex: 1; font-size: 13px; padding: 10px 8px; text-align: center; }
       .lb-body { padding: 0 48px; }
     }
   </style>
@@ -359,18 +354,14 @@
     <div class="bar-info">
       <strong id="barCount">0</strong> photos selected
       <span id="barSize"></span>
-      <div class="bar-meta" id="barMeta">Network: testing... · ETA: --</div>
+      <div class="bar-meta" id="barMeta"></div>
     </div>
     <div class="bar-actions">
       <select class="mode-select" id="barMode">
         <option value="jpg">Fast JPG (2048px)</option>
         <option value="original">Original files</option>
       </select>
-      <div class="bar-btns">
-        <button class="btn" id="barSpeed">Test Speed</button>
-        <button class="btn" id="barClear">Clear</button>
-        <button class="btn btn-primary" id="barDl">↓ Download</button>
-      </div>
+      <button class="btn btn-primary" id="barDl">↓ Download</button>
     </div>
   </div>
 
