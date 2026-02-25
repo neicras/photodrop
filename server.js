@@ -11,6 +11,8 @@ const args = process.argv.slice(2);
 const PHOTO_DIR = path.resolve(args[0] || '.');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const CACHE_DIR = path.join(PHOTO_DIR, '.photodrop');
+const ZIPS_DIR = path.join(CACHE_DIR, 'zips');
+const REQUESTS_DIR = path.join(CACHE_DIR, 'requests');
 
 const dateArg = args.find(a => a.startsWith('--date='))?.split('=')[1]
   || (args.includes('--date') && args[args.indexOf('--date') + 1])
@@ -43,6 +45,8 @@ if (!fs.existsSync(PHOTO_DIR)) {
   process.exit(1);
 }
 fs.mkdirSync(CACHE_DIR, { recursive: true });
+fs.mkdirSync(ZIPS_DIR, { recursive: true });
+fs.mkdirSync(REQUESTS_DIR, { recursive: true });
 
 function scanPhotos() {
   const out = [];
@@ -294,63 +298,81 @@ async function main() {
     };
     activeDownload = job;
 
+    const reqTime = new Date().toISOString();
+    const reqSafe = reqTime.replace(/[:.]/g, '-').slice(0, 19);
+    const zipPath = path.join(ZIPS_DIR, `${job.id}-${reqSafe}.zip`);
+    const reqLog = { id: job.id, time: reqTime, mode, files, status: 'building', zipPath };
+    const reqLogPath = path.join(REQUESTS_DIR, `${job.id}.json`);
+    fs.writeFileSync(reqLogPath, JSON.stringify(reqLog, null, 2));
+
+    console.log(`↓ Download: ${files.length} file(s) requested (${mode}) [${job.id}]`);
+
     req.setTimeout(0);
     res.setTimeout(0);
 
-    const ts = new Date().toISOString().slice(0, 10);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="photos-${ts}-${mode}.zip"`);
-    res.setHeader('Connection', 'keep-alive');
-
     const startedAt = Date.now();
-    const socketBytesStart = res.socket?.bytesWritten || 0;
-    let firstByteAt = null;
     let finished = false;
     const finish = (status, extra = '') => {
       if (finished) return;
       finished = true;
-      const endedAt = Date.now();
-      const elapsedMs = endedAt - startedAt;
-      const ttfbMs = firstByteAt ? firstByteAt - startedAt : null;
-      const socketBytesNow = res.socket?.bytesWritten || socketBytesStart;
-      const sentBytes = Math.max(0, socketBytesNow - socketBytesStart);
-      const mbps = elapsedMs > 0 ? (((sentBytes * 8) / (elapsedMs / 1000)) / 1_000_000) : 0;
+      const elapsedMs = Date.now() - startedAt;
       console.log(
         `[download] id=${job.id} status=${status} mode=${mode} files=${files.length} ` +
-        `planned_mb=${(plannedBytes / 1048576).toFixed(2)} sent_mb=${(sentBytes / 1048576).toFixed(2)} ` +
-        `elapsed_ms=${elapsedMs} ttfb_ms=${ttfbMs ?? 'n/a'} avg_mbps=${mbps.toFixed(2)} ${extra}`.trim()
+        `planned_mb=${(plannedBytes / 1048576).toFixed(2)} elapsed_ms=${elapsedMs} ${extra}`.trim()
       );
+      reqLog.status = status;
+      fs.writeFileSync(reqLogPath, JSON.stringify(reqLog, null, 2));
+      if (status === 'sent') {
+        fs.unlink(zipPath, () => {});
+      } else {
+        console.log(`  ZIP saved at: ${zipPath}`);
+      }
       activeDownload = null;
     };
 
-    const archive = archiver('zip', { store: true });
-    archive.on('data', () => {
-      if (!firstByteAt) firstByteAt = Date.now();
-    });
-    archive.on('error', (err) => {
+    // Build ZIP to disk first so it survives a dropped connection
+    try {
+      await new Promise((resolve, reject) => {
+        const archive = archiver('zip', { store: true });
+        const out = fs.createWriteStream(zipPath);
+        archive.on('error', reject);
+        out.on('close', resolve);
+        archive.pipe(out);
+        for (const item of prepared) {
+          archive.append(fs.createReadStream(item.source), { name: item.name });
+        }
+        archive.finalize();
+      });
+    } catch (err) {
       console.error(`Archive error: ${err.message}`);
-      if (!res.headersSent) res.status(500).json({ error: 'Zip failed' });
-      finish('archive_error', `err="${err.message}"`);
-    });
-    archive.on('end', () => finish('success'));
-    res.on('close', () => {
-      if (!res.writableEnded) {
-        archive.abort();
-        finish('client_closed');
-      }
-    });
-    archive.pipe(res);
-
-    for (const item of prepared) {
-      archive.append(fs.createReadStream(item.source), { name: item.name });
+      reqLog.status = 'build_error';
+      fs.writeFileSync(reqLogPath, JSON.stringify(reqLog, null, 2));
+      activeDownload = null;
+      return res.status(500).json({ error: 'Zip failed' });
     }
-    archive.finalize();
 
-    console.log(`↓ Download: ${files.length} file(s) requested (${mode}) [${job.id}]`);
+    const zipSize = fs.statSync(zipPath).size;
+    reqLog.zipSize = zipSize;
+    reqLog.status = 'ready';
+    fs.writeFileSync(reqLogPath, JSON.stringify(reqLog, null, 2));
+
+    const dlDate = reqTime.slice(0, 10);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="photos-${dlDate}-${mode}.zip"`);
+    res.setHeader('Content-Length', zipSize);
+    res.setHeader('Connection', 'keep-alive');
+
+    const stream = fs.createReadStream(zipPath);
+    stream.on('error', (err) => finish('read_error', `err="${err.message}"`));
+    res.on('finish', () => finish('sent'));
+    res.on('close', () => { if (!finished) finish('client_closed'); });
+    stream.pipe(res);
   });
 
   const server = app.listen(PORT, () => {
     console.log(`\n✦ Gallery live at http://localhost:${PORT}`);
+    spawn('caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore' });
+    console.log('✦ Sleep prevention active — Mac will stay awake while serving');
     startTunnel();
   });
   server.timeout = 0;
