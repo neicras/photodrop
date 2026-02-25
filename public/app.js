@@ -161,6 +161,11 @@ async function downloadSel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ files: Array.from(selected) }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Download failed' }));
+      alert(err.error || `Download failed (${res.status})`);
+      return;
+    }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
