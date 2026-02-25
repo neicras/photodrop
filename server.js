@@ -176,6 +176,18 @@ async function main() {
 
   const app = express();
   app.use(express.json());
+
+  const BOOT = Date.now();
+  const indexHtml = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8')
+    .replace('src="app.js"', `src="app.js?v=${BOOT}"`);
+
+  app.get('/', (_req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.send(indexHtml);
+  });
+
   app.use(express.static(path.join(__dirname, 'public'), {
     etag: false,
     lastModified: false,
