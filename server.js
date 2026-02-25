@@ -216,26 +216,38 @@ async function main() {
       if (!fs.existsSync(path.join(PHOTO_DIR, f)))
         return res.status(404).json({ error: `Not found: ${f}` });
     }
+
+    req.setTimeout(0);
+    res.setTimeout(0);
+
     const ts = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="photos-${ts}.zip"`);
+    res.setHeader('Connection', 'keep-alive');
 
     const archive = archiver('zip', { store: true });
     archive.on('error', (err) => {
       console.error(`Archive error: ${err.message}`);
       if (!res.headersSent) res.status(500).json({ error: 'Zip failed' });
     });
+    res.on('close', () => archive.abort());
     archive.pipe(res);
-    for (const f of files) archive.file(path.join(PHOTO_DIR, f), { name: path.basename(f) });
+
+    for (const f of files) {
+      const fullPath = path.join(PHOTO_DIR, f);
+      archive.append(fs.createReadStream(fullPath), { name: path.basename(f) });
+    }
     archive.finalize();
 
     console.log(`↓ Download: ${files.length} file(s) requested`);
   });
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`\n✦ Gallery live at http://localhost:${PORT}`);
     startTunnel();
   });
+  server.timeout = 0;
+  server.keepAliveTimeout = 120000;
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
