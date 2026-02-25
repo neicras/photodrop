@@ -4,3 +4,4 @@ package-lock.json
 .photodrop/
 cloudflared.yml
 PhotoDrop.app/
+*.zip
