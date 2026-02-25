@@ -1,6 +1,8 @@
 let photos = [];
 const selected = new Set();
 let lbIdx = -1;
+let measuredMbps = null;
+let lastSpeedAt = 0;
 
 const $ = (s) => document.getElementById(s);
 
@@ -11,6 +13,7 @@ async function init() {
   $('meta').textContent = `${photos.length} photos`;
   renderGrid();
   bindEvents();
+  testSpeed();
 }
 
 function renderGrid() {
@@ -50,6 +53,8 @@ function bindEvents() {
   });
 
   $('selAllBtn').addEventListener('click', toggleAll);
+  $('barMode').addEventListener('change', syncUI);
+  $('barSpeed').addEventListener('click', testSpeed);
   $('barClear').addEventListener('click', clearSel);
   $('barDl').addEventListener('click', downloadSel);
   $('lbClose').addEventListener('click', closeLb);
@@ -100,12 +105,16 @@ function syncUI() {
   $('bar').classList.toggle('show', n > 0);
   $('selAllBtn').textContent = n === photos.length ? 'Deselect All' : 'Select All';
 
+  const mode = $('barMode').value;
   let bytes = 0;
   for (const f of selected) {
     const p = photos.find(x => x.filename === f);
-    if (p) bytes += p.size;
+    if (!p) continue;
+    if (mode === 'jpg') bytes += p.previewSize || Math.max(200 * 1024, Math.round(p.size * 0.3));
+    else bytes += p.size;
   }
   $('barSize').textContent = bytes ? ` · ${fmtSize(bytes)}` : '';
+  $('barMeta').textContent = formatMeta(bytes);
 
   if (lbIdx >= 0) syncLbBtn();
 }
@@ -151,6 +160,7 @@ function dlSingle() {
 
 async function downloadSel() {
   if (!selected.size) return;
+  const mode = $('barMode').value;
   const btn = $('barDl');
   btn.textContent = 'Preparing...';
   btn.disabled = true;
@@ -159,10 +169,19 @@ async function downloadSel() {
     const res = await fetch('/api/download', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: Array.from(selected) }),
+      body: JSON.stringify({ files: Array.from(selected), mode }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Download failed' }));
+      if (res.status === 429 && err.retryAfterSec) {
+        alert(`${err.error}\nPlease retry in about ${err.retryAfterSec}s.`);
+      } else {
+        alert(err.error || `Download failed (${res.status})`);
+      }
+      return;
+    }
+    if (!res.headers.get('Content-Type')?.includes('zip')) {
+      const err = await res.json().catch(() => ({ error: 'Unexpected response while downloading' }));
       alert(err.error || `Download failed (${res.status})`);
       return;
     }
@@ -192,6 +211,37 @@ function onKey(e) {
       toggleLbSel();
       break;
   }
+}
+
+function formatMeta(bytes) {
+  const netText = measuredMbps
+    ? `Network: ${measuredMbps.toFixed(1)} Mbps`
+    : 'Network: unknown';
+  if (!bytes || !measuredMbps) return `${netText} · ETA: --`;
+  const seconds = (bytes * 8) / (measuredMbps * 1000 * 1000);
+  const eta = seconds < 60
+    ? `${Math.max(1, Math.round(seconds))}s`
+    : `${Math.round(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  return `${netText} · ETA: ~${eta}`;
+}
+
+async function testSpeed() {
+  const now = Date.now();
+  if (now - lastSpeedAt < 1500) return;
+  lastSpeedAt = now;
+  $('barMeta').textContent = 'Network: testing... · ETA: --';
+  try {
+    const bytes = 1024 * 1024;
+    const start = performance.now();
+    const res = await fetch(`/api/speed-test?bytes=${bytes}&t=${Date.now()}`, { cache: 'no-store' });
+    const blob = await res.blob();
+    const elapsedSec = (performance.now() - start) / 1000;
+    const bps = (blob.size * 8) / elapsedSec;
+    measuredMbps = bps / 1_000_000;
+  } catch {
+    measuredMbps = null;
+  }
+  syncUI();
 }
 
 function enc(s) { return encodeURIComponent(s); }

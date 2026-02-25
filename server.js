@@ -176,13 +176,38 @@ async function main() {
   const app = express();
   app.use(express.json());
   app.use(express.static(path.join(__dirname, 'public')));
+  let activeDownload = null;
+  let downloadSeq = 0;
 
   app.get('/api/photos', (_req, res) => {
     const list = scanPhotos().map(filename => {
       const stat = fs.statSync(path.join(PHOTO_DIR, filename));
-      return { filename, raw: isRaw(filename), size: stat.size };
+      const previewPath = cached(filename, 'preview');
+      const previewSize = fs.existsSync(previewPath) ? fs.statSync(previewPath).size : null;
+      return { filename, raw: isRaw(filename), size: stat.size, previewSize };
     });
     res.json(list);
+  });
+
+  app.get('/api/speed-test', (req, res) => {
+    const requested = parseInt(req.query.bytes || '1048576', 10);
+    const bytes = Math.max(65536, Math.min(requested, 5 * 1024 * 1024));
+    const payload = Buffer.alloc(bytes, 0x61);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Content-Length', bytes);
+    res.end(payload);
+  });
+
+  app.get('/api/download-status', (_req, res) => {
+    if (!activeDownload) return res.json({ busy: false });
+    res.json({
+      busy: true,
+      id: activeDownload.id,
+      mode: activeDownload.mode,
+      files: activeDownload.files,
+      runningForMs: Date.now() - activeDownload.startedAt,
+    });
   });
 
   app.get(/^\/api\/thumb\//, (req, res) => {
@@ -208,38 +233,103 @@ async function main() {
     res.download(full, path.basename(rel));
   });
 
-  app.post('/api/download', (req, res) => {
+  app.post('/api/download', async (req, res) => {
     const files = req.body.files || [];
+    const mode = req.body.mode === 'jpg' ? 'jpg' : 'original';
     if (!files.length) return res.status(400).json({ error: 'No files' });
     if (files.length > 20) return res.status(400).json({ error: 'Max 20 photos per download' });
+    if (activeDownload) {
+      return res.status(429).json({
+        error: 'Server is currently processing another download. Please retry in a moment.',
+        retryAfterSec: 5,
+      });
+    }
     for (const f of files) {
       if (!fs.existsSync(path.join(PHOTO_DIR, f)))
         return res.status(404).json({ error: `Not found: ${f}` });
     }
+
+    const prepared = [];
+    let plannedBytes = 0;
+    for (const f of files) {
+      const fullPath = path.join(PHOTO_DIR, f);
+      if (mode === 'jpg') {
+        let previewPath = cached(f, 'preview');
+        if (!fs.existsSync(previewPath)) {
+          await ensureCached(fullPath, f, PREVIEW_W, 'preview');
+        }
+        previewPath = cached(f, 'preview');
+        if (!fs.existsSync(previewPath)) return res.status(500).json({ error: `Preview failed: ${f}` });
+        prepared.push({ source: previewPath, name: `${path.basename(f, path.extname(f))}.jpg` });
+        plannedBytes += fs.statSync(previewPath).size;
+      } else {
+        prepared.push({ source: fullPath, name: path.basename(f) });
+        plannedBytes += fs.statSync(fullPath).size;
+      }
+    }
+
+    const job = {
+      id: `dl-${++downloadSeq}`,
+      mode,
+      files: files.length,
+      plannedBytes,
+      startedAt: Date.now(),
+    };
+    activeDownload = job;
 
     req.setTimeout(0);
     res.setTimeout(0);
 
     const ts = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="photos-${ts}.zip"`);
+    res.setHeader('Content-Disposition', `attachment; filename="photos-${ts}-${mode}.zip"`);
     res.setHeader('Connection', 'keep-alive');
 
+    const startedAt = Date.now();
+    const socketBytesStart = res.socket?.bytesWritten || 0;
+    let firstByteAt = null;
+    let finished = false;
+    const finish = (status, extra = '') => {
+      if (finished) return;
+      finished = true;
+      const endedAt = Date.now();
+      const elapsedMs = endedAt - startedAt;
+      const ttfbMs = firstByteAt ? firstByteAt - startedAt : null;
+      const socketBytesNow = res.socket?.bytesWritten || socketBytesStart;
+      const sentBytes = Math.max(0, socketBytesNow - socketBytesStart);
+      const mbps = elapsedMs > 0 ? (((sentBytes * 8) / (elapsedMs / 1000)) / 1_000_000) : 0;
+      console.log(
+        `[download] id=${job.id} status=${status} mode=${mode} files=${files.length} ` +
+        `planned_mb=${(plannedBytes / 1048576).toFixed(2)} sent_mb=${(sentBytes / 1048576).toFixed(2)} ` +
+        `elapsed_ms=${elapsedMs} ttfb_ms=${ttfbMs ?? 'n/a'} avg_mbps=${mbps.toFixed(2)} ${extra}`.trim()
+      );
+      activeDownload = null;
+    };
+
     const archive = archiver('zip', { store: true });
+    archive.on('data', () => {
+      if (!firstByteAt) firstByteAt = Date.now();
+    });
     archive.on('error', (err) => {
       console.error(`Archive error: ${err.message}`);
       if (!res.headersSent) res.status(500).json({ error: 'Zip failed' });
+      finish('archive_error', `err="${err.message}"`);
     });
-    res.on('close', () => archive.abort());
+    archive.on('end', () => finish('success'));
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        archive.abort();
+        finish('client_closed');
+      }
+    });
     archive.pipe(res);
 
-    for (const f of files) {
-      const fullPath = path.join(PHOTO_DIR, f);
-      archive.append(fs.createReadStream(fullPath), { name: path.basename(f) });
+    for (const item of prepared) {
+      archive.append(fs.createReadStream(item.source), { name: item.name });
     }
     archive.finalize();
 
-    console.log(`↓ Download: ${files.length} file(s) requested`);
+    console.log(`↓ Download: ${files.length} file(s) requested (${mode}) [${job.id}]`);
   });
 
   const server = app.listen(PORT, () => {

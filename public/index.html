@@ -253,7 +253,21 @@
       color: var(--text-charcoal);
       font-family: var(--font-serif);
     }
+    .bar-meta {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-gray);
+    }
     .bar-actions { display: flex; gap: 10px; }
+    .mode-select {
+      border: 1px solid var(--border-light);
+      background: var(--card-bg);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+      color: var(--text-charcoal);
+      font-family: var(--font-sans);
+    }
 
     .loading {
       display: flex;
@@ -330,8 +344,14 @@
     <div class="bar-info">
       <strong id="barCount">0</strong> photos selected
       <span id="barSize"></span>
+      <div class="bar-meta" id="barMeta">Network: testing... · ETA: --</div>
     </div>
     <div class="bar-actions">
+      <select class="mode-select" id="barMode">
+        <option value="jpg">Fast JPG (recommended)</option>
+        <option value="original">Original files</option>
+      </select>
+      <button class="btn" id="barSpeed">Test Speed</button>
       <button class="btn" id="barClear">Clear</button>
       <button class="btn btn-primary" id="barDl">↓ Download Selected</button>
     </div>
