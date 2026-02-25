@@ -1,0 +1,7 @@
+PhotoDrop.app
+PhotoDrop.command
+setup-tunnel.sh
+cloudflared.yml
+.photodrop
+node_modules
+*.icns

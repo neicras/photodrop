@@ -1,0 +1,44 @@
+{
+  "name": "photodrop-share",
+  "version": "1.0.0",
+  "description": "Share photos from your SD card or folder via a secure tunnel. No upload. No cloud. One command, one link.",
+  "main": "server.js",
+  "bin": {
+    "photodrop": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "photo",
+    "gallery",
+    "share",
+    "tunnel",
+    "cloudflare",
+    "raw",
+    "photography",
+    "sd-card",
+    "exif",
+    "self-hosted"
+  ],
+  "author": "Eric San <eric@ericsan.io> (https://ericsan.io)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neicras/photodrop"
+  },
+  "homepage": "https://photodrop.ericsan.io",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "server.js",
+    "public/**"
+  ],
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "exiftool-vendored": "^35.10.1",
+    "express": "^5.2.1",
+    "sharp": "^0.34.5"
+  }
+}

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhotoDrop — Eric San</title>
+  <meta property="og:title" content="Your photos are ready">
+  <meta property="og:description" content="Browse, select, and download your event photos. Hosted by Eric San.">
+  <meta property="og:image" content="/og.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://photodrop.ericsan.io">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Your photos are ready">
+  <meta name="twitter:description" content="Browse, select, and download your event photos.">
+  <meta name="twitter:image" content="/og.png">
+  <style>
+    :root {
+      --bg-parchment: #F3F1EA;
+      --card-bg: #FFFFFF;
+      --text-charcoal: #2D2C28;
+      --text-gray: #84827A;
+      --border-light: #E0DDD2;
+      --accent: #DA7756;
+      --accent-hover: #C56648;
+      --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-parchment);
+      background-image: radial-gradient(rgba(45, 44, 40, 0.08) 1px, transparent 1px);
+      background-size: 24px 24px;
+      color: var(--text-charcoal);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border-light);
+      padding: 20px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .logo {
+      font-family: var(--font-serif);
+      font-size: 22px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+    .logo .spark { color: var(--accent); margin-right: 4px; }
+    .meta { color: var(--text-gray); font-size: 13px; margin-top: 2px; }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--border-light);
+      background: var(--card-bg);
+      color: var(--text-charcoal);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--text-gray); }
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    /* --- Grid --- */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 3px;
+      padding: 3px;
+    }
+    .cell {
+      position: relative;
+      aspect-ratio: 1;
+      overflow: hidden;
+      cursor: pointer;
+      background: #e8e6df;
+    }
+    .cell img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.25s ease;
+      display: block;
+    }
+    .cell:hover img { transform: scale(1.04); }
+
+    .cell .check {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.85);
+      background: rgba(0,0,0,0.25);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s, background 0.15s;
+    }
+    .cell:hover .check, .cell.on .check { opacity: 1; }
+    .cell.on .check {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .cell.on::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border: 3px solid var(--accent);
+      pointer-events: none;
+    }
+    .cell .fname {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 20px 8px 5px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.45));
+      color: white;
+      font-size: 11px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .cell:hover .fname { opacity: 1; }
+
+    /* --- Lightbox --- */
+    .lb {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(10,10,8,0.94);
+      backdrop-filter: blur(6px);
+      flex-direction: column;
+    }
+    .lb.open { display: flex; }
+    .lb-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      color: rgba(255,255,255,0.65);
+      font-size: 13px;
+    }
+    .lb-close {
+      width: 36px;
+      height: 36px;
+      border: none;
+      background: none;
+      color: rgba(255,255,255,0.6);
+      font-size: 22px;
+      cursor: pointer;
+      transition: color 0.15s;
+      border-radius: 50%;
+    }
+    .lb-close:hover { color: white; background: rgba(255,255,255,0.1); }
+    .lb-body {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 0 60px;
+    }
+    .lb-body img {
+      max-width: 90vw;
+      max-height: calc(100vh - 130px);
+      object-fit: contain;
+      border-radius: 3px;
+      user-select: none;
+    }
+    .lb-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px;
+      height: 44px;
+      border: none;
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.7);
+      font-size: 22px;
+      cursor: pointer;
+      border-radius: 50%;
+      transition: background 0.15s;
+    }
+    .lb-nav:hover { background: rgba(255,255,255,0.16); }
+    .lb-nav.prev { left: 12px; }
+    .lb-nav.next { right: 12px; }
+    .lb-foot {
+      display: flex;
+      justify-content: center;
+      padding: 14px;
+      gap: 10px;
+    }
+    .lb-foot .btn {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.85);
+    }
+    .lb-foot .btn:hover { background: rgba(255,255,255,0.16); }
+    .lb-foot .btn.picked {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    /* --- Selection bar --- */
+    .bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--card-bg);
+      border-top: 1px solid var(--border-light);
+      padding: 14px 28px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 200;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
+    }
+    .bar.show { display: flex; }
+    .bar-info {
+      font-size: 14px;
+      color: var(--text-gray);
+    }
+    .bar-info strong {
+      color: var(--text-charcoal);
+      font-family: var(--font-serif);
+    }
+    .bar-actions { display: flex; gap: 10px; }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      color: var(--text-gray);
+      font-size: 15px;
+      font-family: var(--font-serif);
+    }
+
+    .credit {
+      position: fixed;
+      bottom: 16px;
+      right: 20px;
+      font-size: 11px;
+      color: var(--text-charcoal);
+      font-family: var(--font-sans);
+      background: var(--card-bg);
+      border: 1px solid var(--border-light);
+      border-radius: 20px;
+      padding: 6px 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      z-index: 150;
+      letter-spacing: 0.01em;
+      line-height: 1;
+    }
+    .credit .spark { color: var(--accent); }
+    .credit a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .credit a:hover { text-decoration: underline; }
+
+    @media (max-width: 640px) {
+      .grid { grid-template-columns: repeat(2, 1fr); }
+      header { padding: 14px 16px; }
+      .bar { padding: 12px 16px; }
+      .lb-body { padding: 0 48px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="logo"><span class="spark">✦</span> PhotoDrop</div>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" id="selAllBtn">Select All</button>
+    </div>
+  </header>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="lb" id="lb">
+    <div class="lb-top">
+      <span id="lbName"></span>
+      <button class="lb-close" id="lbClose">✕</button>
+    </div>
+    <div class="lb-body">
+      <button class="lb-nav prev" id="lbPrev">‹</button>
+      <img id="lbImg" src="" alt="">
+      <button class="lb-nav next" id="lbNext">›</button>
+    </div>
+    <div class="lb-foot">
+      <button class="btn" id="lbSelBtn">✦ Select</button>
+      <button class="btn" id="lbDlBtn">↓ Original</button>
+    </div>
+  </div>
+
+  <div class="bar" id="bar">
+    <div class="bar-info">
+      <strong id="barCount">0</strong> photos selected
+      <span id="barSize"></span>
+    </div>
+    <div class="bar-actions">
+      <button class="btn" id="barClear">Clear</button>
+      <button class="btn btn-primary" id="barDl">↓ Download Selected</button>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">Loading gallery...</div>
+
+  <div class="credit"><span class="spark">✦</span> built by <a href="https://ericsan.io">Eric San</a></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
